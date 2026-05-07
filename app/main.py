@@ -675,7 +675,7 @@ def create_app(
         records = service.list_records_by_blueprint(db, auth.organization_id, blueprint_id)
         if service.get_blueprint(db, auth.organization_id, blueprint_id) is None:
             raise HTTPException(status_code=404, detail="blueprint not found")
-        return BlueprintPolicyActionResponse(blueprint_id=blueprint_id, status="exported", affected_agent_record_ids=[r.id for r in records], exported_inventory=[_record_response(r).model_dump(mode="json") for r in records])
+        return BlueprintPolicyActionResponse(action="export", blueprint_id=blueprint_id, success=True, message=f"Exported {len(records)} records")
 
     @app.get("/v1/agent-records", response_model=list[AgentRecordResponse])
     def list_agent_records(
