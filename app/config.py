@@ -18,10 +18,10 @@ class Settings:
         self.api_rate_limit_window_seconds = int(os.getenv("API_RATE_LIMIT_WINDOW_SECONDS", "60"))
         
         # Production secret validation - fail hard if using dev secret in production
-        self._env = os.getenv("ENV", "development")
+        self.env = os.getenv("ENV", "development")
         self.session_signing_secret = os.getenv("SESSION_SIGNING_SECRET", "")
         if not self.session_signing_secret:
-            if self._env == "production":
+            if self.env == "production":
                 raise ValueError("SESSION_SIGNING_SECRET must be set in production - cannot use default dev secret")
             self.session_signing_secret = "agent-identity-dev-secret"  # Only allowed in dev
         self.session_ttl_seconds = int(os.getenv("SESSION_TTL_SECONDS", "43200"))
