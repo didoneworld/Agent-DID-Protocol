@@ -1,8 +1,49 @@
 # Agent DID
 
-Open source, vendor-agnostic agent identity and access management control plane built around OpenID Connect, SAML, SCIM, Shared Signals, and W3C Decentralized Identifiers.
+> **Status:** Stable MVP / reference implementation. Ready for continued development and internal evaluation. **Not production ready yet.**
 
-Agent DID defines an Agent ID record format and provides a runnable FastAPI reference implementation for managing agent identities, governance metadata, authorization, lifecycle operations, and enterprise identity integrations.
+Open source, vendor-agnostic agent identity and access management control plane built around OpenID Connect, SAML, SCIM, Shared Signals, W3C Decentralized Identifiers, and Agent Identity Blueprints.
+
+Agent DID defines an Agent ID record format and provides a runnable FastAPI reference implementation for managing agent identities, governance metadata, authorization, lifecycle operations, blueprint-backed identity fleets, and enterprise identity integrations.
+
+## Current status
+
+Agent DID is now stable enough for continued feature development and internal evaluation. The runtime/import/schema blockers around Agent Identity Blueprints were fixed in PR #8 and merged into `main`.
+
+Current readiness:
+
+| Area | Status |
+|---|---|
+| Local development | Ready |
+| Internal evaluation | Ready |
+| Blueprint feature development | Ready |
+| Production enterprise deployment | Not ready |
+| Security/compliance hardening | In progress |
+| Production observability | Not complete |
+| Full OIDC/SAML hardening | Not complete |
+
+Merged stabilization work includes:
+
+- fixed blueprint model imports in `app/main.py`
+- added missing `PermissionGrant` schema
+- aligned blueprint response fields with schema field names
+- replaced `blueprint.credentials` relationship access with direct credential queries
+- fixed owner/sponsor field handling
+- added production startup validation for `SESSION_SIGNING_SECRET`
+- improved API key hashing with HMAC-SHA256 pepper support
+- added Redis-backed rate limiter support for production deployments when `REDIS_URL` is set
+- added Gunicorn production startup with `uvicorn.workers.UvicornWorker`
+- fixed Docker smoke-test port mapping
+- added CI workflow for tests, linting, Docker build, and smoke test
+- added initial E2E smoke tests
+
+Merge commit:
+
+```text
+3b54c9d8dc6c63543fc466327697c4cbfa22fd76
+```
+
+Agent DID is still not a fully hardened enterprise identity platform. Treat it as a serious MVP/reference implementation until the production-readiness checklist below is complete.
 
 ## What this repository contains
 
@@ -11,18 +52,19 @@ This repository includes both the Agent ID protocol draft and a working SaaS-sty
 ### Protocol and interoperability
 
 - Agent ID protocol draft
-- DID-backed agent identity record
+- DID-backed agent identity records
+- Agent Identity Blueprint alignment model
 - Governance and lifecycle metadata for long-running agents
 - Authorization metadata for delegated and autonomous agent operation
 - Protocol binding examples for A2A, ACP, and ANP
-- Publication and compatibility guidance
 - JSON Schema for validating Agent ID records
+- Compatibility and publication guidance
 
-Agent DID does not define agent-to-agent messaging. It is designed to work alongside interoperability protocols such as A2A, ACP, and ANP.
+Agent DID does not define agent-to-agent messaging. It is designed to work alongside interoperability protocols such as A2A, ACP, ANP, MCP, OpenAPI, and other agent communication standards.
 
 ### Control plane
 
-The FastAPI application provides a tenant-scoped registry and admin surface for Agent ID records.
+The FastAPI application provides a tenant-scoped registry and admin surface for Agent ID records and blueprint-backed agent identity fleets.
 
 Current capabilities include:
 
@@ -37,32 +79,44 @@ Current capabilities include:
 - Shared Signals Framework routes
 - approval workflow routes
 - database-backed Agent ID registry
+- Agent Identity Blueprint CRUD routes
+- blueprint child-agent inventory and creation routes
+- blueprint credential creation, rotation, and deletion routes
+- blueprint principal routes
+- blueprint permission preview and revoke routes
 - record-level fine-grained authorization tuples
 - audit logging for identity and lifecycle events
 - deprovisioning support
 - schema revision tracking and startup migrations
-- in-memory request rate limiting
+- in-memory request rate limiting for local development
+- Redis-backed rate limiting for production when configured
 - request ID logging
 - SQLite for local development
 - `DATABASE_URL` support for Postgres deployments
 - built-in web admin console at `/`
+- Docker and Gunicorn production startup support
+- GitHub Actions CI for tests, lint, Docker build, and smoke test
 
 ## Repository layout
 
 ```text
-app/                         FastAPI SaaS control plane
-app/routers/                 OIDC, SAML, SCIM, session, and discovery routers
-app/static/                  Built-in admin console assets
-docs/agent-id-spec.md        Agent ID protocol draft
+app/                          FastAPI SaaS control plane
+app/routers/                  OIDC, SAML, SCIM, session, and discovery routers
+app/static/                   Built-in admin console assets
+alembic.ini                   Alembic configuration
+docs/agent-id-spec.md         Agent ID protocol draft
 docs/product-documentation.md Product behavior, configuration, defaults, and API docs
-docs/openid-alignment.md     Rationale for OpenID authorization and governance alignment
-docs/compatibility.md        Evolution and compatibility rules
-schemas/agent-id-record.yaml Core Agent ID record example
-schemas/json/agent-id-record.schema.json JSON Schema for validation
-examples/                    Protocol binding and DID method examples
+docs/openid-alignment.md      Rationale for OpenID authorization and governance alignment
+docs/compatibility.md         Evolution and compatibility rules
+docs/lifecycle-management.md  Lifecycle states, policies, workflows, and runbooks
+schemas/agent-id-record.yaml  Core Agent ID record example
+schemas/json/                 JSON Schemas
+examples/                     Protocol binding and DID method examples
 templates/publish-checklist.md Publication checklist
-tests/                       Automated test suite
-scripts/                     Validation and utility scripts
+tests/                        Automated test suite
+scripts/                      Validation and utility scripts
+sdk/python/                   Python SDK
+.github/workflows/            CI/CD workflows
 ```
 
 ## Quick start
@@ -113,36 +167,31 @@ Run validation inside the image:
 docker run --rm agent-identity:local /app/scripts/validate.sh
 ```
 
-Pull a published image:
+Production-style startup uses Gunicorn with Uvicorn workers when `ENV=production`:
 
 ```bash
-docker run --rm -p 8000:8000 autonomyx/agent-identity:latest
+docker run --rm \
+  -e ENV=production \
+  -e SESSION_SIGNING_SECRET='replace-with-a-strong-secret' \
+  -p 8000:8000 \
+  agent-identity:local
+```
+
+Use Redis-backed rate limiting in production by setting `REDIS_URL`:
+
+```bash
+docker run --rm \
+  -e ENV=production \
+  -e SESSION_SIGNING_SECRET='replace-with-a-strong-secret' \
+  -e REDIS_URL='redis://redis:6379' \
+  -p 8000:8000 \
+  agent-identity:local
 ```
 
 Published images:
 
 - Docker Hub: `autonomyx/agent-identity:latest`
 - GHCR: `ghcr.io/didoneworld/agent-identity:latest`
-
-### Publish to Docker Hub
-
-This repository includes a GitHub Actions workflow that builds the image for `linux/amd64` and `linux/arm64`, then pushes it to Docker Hub. Configure these repository secrets before running the workflow:
-
-- `DOCKERHUB_USERNAME`: Docker Hub username with access to the target repository
-- `DOCKERHUB_TOKEN`: Docker Hub access token or password
-
-Publish options:
-
-```bash
-# Publish from GitHub Actions manually:
-# Actions > Publish Docker image > Run workflow
-
-# Publish a semantic version tag from the command line:
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-The manual workflow input defaults to `autonomyx/agent-identity`, and successful runs also publish `latest` unless `push_latest` is disabled.
 
 ## Run with Docker Compose
 
@@ -169,16 +218,32 @@ Create a local environment file from the template:
 cp .env.example .env
 ```
 
-
 ## Agent Identity Blueprint Alignment
 
-Agent DID supports a vendor-neutral **Agent Identity Blueprint** model inspired by Microsoft Entra Agent ID blueprints. A blueprint is a reusable template and policy container for many DID-backed child agent identities. It captures publisher metadata, sign-in audience, identifier URIs, app roles, optional claims, credential policy, required resource access, inheritable permissions, owners, sponsors, and lifecycle policy actions while preserving W3C DID as the identity foundation.
+Agent DID supports a vendor-neutral **Agent Identity Blueprint** model inspired by Microsoft Entra Agent ID blueprints. A blueprint is a reusable template and policy container for many DID-backed child agent identities.
+
+A blueprint captures:
+
+- publisher metadata
+- sign-in audience
+- identifier URIs
+- app roles
+- optional claims
+- credential policy
+- required resource access
+- inheritable permissions
+- owners
+- sponsors
+- tenant-local blueprint principals
+- lifecycle policy actions
 
 Blueprint-backed records remain compatible with A2A, ACP, and ANP because the child Agent ID record still owns protocol bindings and `agent.did`. Microsoft Entra compatibility is provided as an alignment profile rather than a hard dependency; non-Microsoft providers can use `extension_fields` for local issuer, federation, principal, and managed identity metadata.
 
-Existing Agent ID records are backward compatible. `blueprint_id` is optional, so standalone records continue to validate. To migrate, create a blueprint for shared metadata and permissions, then upsert each child Agent ID record with `blueprint_id` at the top level or in `extensions.blueprint_id`; the control plane records inherited metadata in `extensions.blueprint.inherited_metadata` unless the child overrides it.
+Existing Agent ID records are backward compatible. `blueprint_id` is optional, so standalone records continue to validate. To migrate, create a blueprint for shared metadata and permissions, then upsert each child Agent ID record with `blueprint_id` at the top level or in `extensions.blueprint_id`.
 
-Blueprint APIs include CRUD routes, child record creation and inventory, effective permission preview, credential creation/rotation/deletion, and policy actions for disable, enable, quarantine, deprovision, and export. See `docs/entra-blueprint-alignment.md` for token-flow alignment and migration guidance.
+Blueprint APIs include CRUD routes, child record creation and inventory, effective permission preview, credential creation/rotation/deletion, and policy actions for disable, enable, quarantine, deprovision, and export.
+
+See [`docs/entra-blueprint-alignment.md`](docs/entra-blueprint-alignment.md) for token-flow alignment and migration guidance.
 
 ## Core API surface
 
@@ -197,8 +262,12 @@ Authenticated with API key or bearer session:
 - `GET /v1/organizations`
 - `GET /v1/identity-providers`
 - `GET /v1/agent-records`
-- `POST /v1/blueprints`
+- `POST /v1/agent-records`
+- `GET /v1/agent-records/{record_id}`
+- `GET /v1/agent-records/by-did/{did}`
+- `POST /v1/agent-records/{record_id}/deprovision`
 - `GET /v1/blueprints`
+- `POST /v1/blueprints`
 - `GET /v1/blueprints/{blueprint_id}`
 - `PATCH /v1/blueprints/{blueprint_id}`
 - `DELETE /v1/blueprints/{blueprint_id}`
@@ -213,11 +282,7 @@ Authenticated with API key or bearer session:
 - `POST /v1/blueprints/{blueprint_id}/credentials`
 - `POST /v1/blueprints/{blueprint_id}/credentials/{credential_id}/rotate`
 - `DELETE /v1/blueprints/{blueprint_id}/credentials/{credential_id}`
-- `POST /v1/agent-records`
-- `GET /v1/agent-records/{record_id}`
-- `GET /v1/agent-records/by-did/{did}`
 - `GET /v1/audit-events`
-- `POST /v1/agent-records/{record_id}/deprovision`
 - `GET /v1/fga/tuples`
 - `POST /v1/fga/tuples`
 - `POST /v1/fga/check`
@@ -241,9 +306,11 @@ http://127.0.0.1:8000/docs
 
 ## Identity model
 
-Agent DID separates identity, authorization, and governance:
+Agent DID separates identity, authorization, governance, and lifecycle:
 
 - DIDs identify agents.
+- Agent ID records describe agent capabilities, bindings, governance, and authorization metadata.
+- Agent Identity Blueprints define reusable metadata, credential, permission, owner, sponsor, and policy templates.
 - Authorization metadata describes whether agents act autonomously or on behalf of users, teams, or systems.
 - Governance metadata exposes lifecycle, audit, approval, and deprovisioning controls for long-running agents.
 
@@ -257,37 +324,33 @@ Examples:
 - `examples/did-methods/did-web-agent.yaml`
 - `examples/did-methods/did-key-agent.yaml`
 
-## Current limitations
+## Lifecycle management
 
-Agent DID is a serious MVP and reference SaaS foundation, not a fully hardened enterprise identity platform.
+Agent DID includes explicit, policy-governed lifecycle management for Agent ID records and Agent Identity Blueprints.
 
-Known limitations include:
+Highlights:
 
-- external OIDC and SAML production hardening is still evolving
-- SAML metadata ingestion, certificate validation, logout, and full SP hardening are not complete
-- internal FGA is intentionally minimal and is not OpenFGA-compatible yet
-- admin UI does not yet expose every API capability
-- SCIM, SSF, approvals, and lifecycle automation are early product slices
-- Redis-backed rate limiting, background workers, production observability, and secret encryption at rest are not yet included
+- lifecycle states and transition validation for agents and blueprints
+- lifecycle APIs for review, approval, activation, suspension, resumption, quarantine, renewal, credential rotation, deprovisioning, archive, and delete
+- activation validation gates for DID documents, verification methods, credentials, permissions, sponsors, owners, governance endpoints, audit logging, production hardening, risk thresholds, and quarantine/revocation status
+- staged, idempotent, auditable deprovisioning with dry-run reports and blueprint child cascade support
+- lifecycle audit event queries, webhook event schemas, policy schemas, renewal/risk/quarantine models, and operational runbooks
+- backward-compatible migration semantics for records without lifecycle state
 
-## Roadmap
+See [`docs/lifecycle-management.md`](docs/lifecycle-management.md) for state diagrams, policy configuration, workflows, APIs, examples, and migration guidance.
 
-Planned work includes:
+## SDKs
 
-1. Harden OIDC and SAML flows with full token validation, signed metadata, logout, and session revocation.
-2. Expand authorization with group mapping, inheritance, policy templates, and an OpenFGA-compatible model.
-3. Mature SCIM, SSF, approvals, audit export, key rotation, and lifecycle automation.
-4. Improve operations with Alembic, Redis, workers, metrics, tracing, and deployment manifests.
-5. Expand the admin console for identity providers, sessions, FGA tuples, teams, tenant settings, and approvals.
+A Python SDK is available in [`sdk/python`](sdk/python/README.md) for adopters who want to integrate Agent DID lifecycle operations into their own portals, workers, CI/CD automations, or identity governance systems. It supports API-key, bearer-token, and dynamic auth-provider adapters while keeping Agent DID lifecycle operations vendor-neutral.
 
 ## CI/CD
 
 GitHub Actions is configured to:
 
 - run tests on pull requests
+- run linting with Ruff
 - build and smoke test the container on pull requests
-- publish `latest`, branch, tag, and SHA-based image tags on `main` pushes and `v*` tags
-- push images to GHCR and Docker Hub
+- publish image tags on `main` pushes and `v*` tags when publishing workflows are configured
 
 Required GitHub repository secrets for Docker Hub publishing:
 
@@ -296,25 +359,53 @@ Required GitHub repository secrets for Docker Hub publishing:
 
 GHCR publishing uses `GITHUB_TOKEN` with package write permission.
 
+## Current limitations
+
+Agent DID is a serious MVP and reference SaaS foundation, not a fully hardened enterprise identity platform.
+
+Known limitations include:
+
+- external OIDC production hardening still needs full authorization-code exchange, ID-token validation, nonce/state validation, JWKS validation, and provider-specific claim mapping
+- SAML metadata ingestion, signed assertion validation, certificate validation, logout, and full SP hardening are not complete
+- internal FGA is intentionally minimal and is not OpenFGA-compatible yet
+- admin UI does not yet expose every API capability
+- SCIM, SSF, approvals, and lifecycle automation are early product slices
+- Redis rate limiting exists, but production operations need Redis health checks, fail-closed/fail-open policy controls, and multi-instance tests
+- Alembic configuration exists, but full versioned migration scripts, rollback testing, and deployment migration runbooks still need to mature
+- webhook delivery exists as an async helper, but durable queues, dead-letter handling, replay, and operational dashboards are still future work
+- secret encryption at rest for identity provider credentials and other sensitive fields still needs to be implemented
+- blueprint endpoint coverage is still thin and should be expanded beyond smoke tests
+
+## Production-readiness checklist
+
+Before using Agent DID in production, complete and verify:
+
+- full OIDC authorization-code flow validation
+- production-grade SAML validation
+- encryption at rest for sensitive secrets
+- versioned Alembic migrations and rollback tests
+- distributed rate-limit tests with Redis
+- durable background workers for lifecycle, webhook, rotation, and deprovisioning jobs
+- blueprint CRUD, credential, permission, and effective-permission endpoint tests
+- tenant isolation tests
+- security and abuse tests
+- structured logs, metrics, traces, alerts, and audit export
+- production deployment manifests
+- backup and restore procedures
+- license selection
+- security disclosure process
+
+## Roadmap
+
+Planned work includes:
+
+1. Harden OIDC and SAML flows with full token validation, signed metadata, logout, and session revocation.
+2. Expand authorization with group mapping, inheritance, policy templates, and an OpenFGA-compatible model.
+3. Mature SCIM, SSF, approvals, audit export, key rotation, and lifecycle automation.
+4. Improve operations with complete Alembic migrations, Redis deployment guidance, workers, metrics, tracing, and deployment manifests.
+5. Expand the admin console for identity providers, sessions, FGA tuples, teams, tenant settings, blueprints, lifecycle actions, and approvals.
+6. Add stronger blueprint endpoint tests and schema validation tests.
+
 ## License
 
 Add license information here before using Agent DID in production or redistributing packaged builds.
-
-## Lifecycle Management
-
-Agent DID now includes explicit, policy-governed lifecycle management for Agent ID records and Agent Identity Blueprints. The lifecycle model is vendor-neutral and DID-first, with Microsoft Entra Agent ID blueprint alignment documented as an optional compatibility profile rather than a runtime dependency.
-
-Highlights:
-
-- Strict lifecycle states and transition validation for agents and blueprints.
-- Lifecycle APIs for review, approval, activation, suspension, resumption, quarantine, renewal, credential rotation, deprovisioning, archive, and delete.
-- Activation validation gates for DID documents, verification methods, credentials, permissions, sponsors, owners, governance endpoints, audit logging, production hardening, risk thresholds, and quarantine/revocation status.
-- Staged, idempotent, auditable deprovisioning with dry-run reports and blueprint child cascade support.
-- Lifecycle audit event queries, webhook event schemas, policy schemas, renewal/risk/quarantine models, and operational runbooks.
-- Backward-compatible migration semantics for records without lifecycle state: enabled records are treated as `active`, disabled records as `suspended`, and previously deprovisioned records as `archived`/`deprovisioned`.
-
-See [Lifecycle Management](docs/lifecycle-management.md) for state diagrams, policy configuration, workflows, APIs, examples, and migration guidance.
-
-### SDKs
-
-A Python SDK is available in [`sdk/python`](sdk/python/README.md) for adopters who want to integrate Agent DID lifecycle operations into their own portals, workers, CI/CD automations, or identity governance systems. It supports API-key, bearer-token, and dynamic auth-provider adapters while keeping Agent DID lifecycle operations vendor-neutral.

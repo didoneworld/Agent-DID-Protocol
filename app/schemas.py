@@ -339,20 +339,20 @@ class AgentIdentityBlueprintResponse(BaseModel):
     description: str
     publisher: str
     verified_publisher: bool
-    publisher_domain: str | None
+    publisher_domain: str | None = None
     sign_in_audience: str
-    identifier_uris: list
-    app_roles: list
-    optional_claims: dict
-    group_membership_claims: list
-    token_encryption_key_id: str | None
-    certification: dict
-    info_urls: dict
-    tags: list
+    identifier_uris: list = Field(default_factory=list, validation_alias="identifier_uris_json")
+    app_roles: list = Field(default_factory=list, validation_alias="app_roles_json")
+    optional_claims: dict = Field(default_factory=dict, validation_alias="optional_claims_json")
+    group_membership_claims: list = Field(default_factory=list, validation_alias="group_membership_claims_json")
+    token_encryption_key_id: str | None = None
+    certification: dict = Field(default_factory=dict, validation_alias="certification_json")
+    info_urls: dict = Field(default_factory=dict, validation_alias="info_urls_json")
+    tags: list = Field(default_factory=list, validation_alias="tags_json")
     status: str
     extension_fields: dict = Field(default_factory=dict, validation_alias="extension_fields_json")
     created_at: datetime
-    updated_at: datetime
+    updated_at: datetime = None
 
 
 class BlueprintPrincipalWrite(BaseModel):
@@ -387,8 +387,6 @@ class BlueprintCredentialWrite(BaseModel):
     expires_at: datetime | None = None
     rotation_status: str = "active"
     last_rotated_at: datetime | None = None
-    development_only: bool = False
-    expires_at: datetime | None = None
     development_only: bool = False
 
 
