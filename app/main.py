@@ -98,18 +98,18 @@ def _record_response(record: AgentRecord) -> AgentRecordResponse:
     )
 
 def _blueprint_response(db: Session, blueprint: AgentIdentityBlueprint) -> AgentIdentityBlueprintResponse:
-    owners = [o.subject for o in db.query(BlueprintOwner).filter_by(organization_id=blueprint.organization_id, blueprint_id=blueprint.blueprint_id).all()]
-    sponsors = [s.subject for s in db.query(BlueprintSponsor).filter_by(organization_id=blueprint.organization_id, blueprint_id=blueprint.blueprint_id).all()]
+    owners = [f"{o.owner_type}:{o.owner_id}" for o in db.query(BlueprintOwner).filter_by(organization_id=blueprint.organization_id, blueprint_id=blueprint.blueprint_id).all()]
+    sponsors = [f"{s.sponsor_type}:{s.sponsor_id}" for s in db.query(BlueprintSponsor).filter_by(organization_id=blueprint.organization_id, blueprint_id=blueprint.blueprint_id).all()]
     required_resource_access = [
         {"resource_app_id": item.resource_app_id, "scopes": item.scopes_json or [], "app_roles": item.app_roles_json or []}
         for item in db.query(BlueprintRequiredResourceAccess).filter_by(organization_id=blueprint.organization_id, blueprint_id=blueprint.blueprint_id).all()
     ]
     inheritable_permissions = [
-        {"resource_app_id": item.resource_app_id, "scopes": item.scopes_json or [], "app_roles": item.app_roles_json or []}
+        {"permission_id": item.permission_id, "display_name": item.display_name, "scope": item.scope, "inheritable": item.inheritable}
         for item in db.query(BlueprintInheritablePermission).filter_by(organization_id=blueprint.organization_id, blueprint_id=blueprint.blueprint_id).all()
     ]
     consent_grants = [
-        {"resource_app_id": item.resource_app_id, "scopes": item.scopes_json or [], "app_roles": item.app_roles_json or [], "revoked": item.revoked}
+        {"resource_app_id": item.principal_id, "scopes": item.scopes_json or [], "app_roles": [], "revoked": item.revoked_at is not None}
         for item in db.query(BlueprintConsentGrant).filter_by(organization_id=blueprint.organization_id, blueprint_id=blueprint.blueprint_id).all()
     ]
     credentials = [
