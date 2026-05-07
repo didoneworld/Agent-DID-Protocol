@@ -251,3 +251,28 @@ class LifecycleServiceMixin:
 
 def sign_webhook_payload(secret: str, payload: dict[str, Any]) -> str:
     return hmac.new(secret.encode(), json.dumps(payload, sort_keys=True).encode(), hashlib.sha256).hexdigest()
+
+
+async def deliver_webhook_async(url: str, secret: str, event_type: str, payload: dict[str, Any], max_retries: int = 3) -> dict[str, Any]:
+    """Deliver lifecycle webhook with retry support.
+    
+    Production feature: durable webhook delivery with retries.
+    """
+    import aiohttp
+    import asyncio
+    
+    payload["event_type"] = event_type
+    payload["signature"] = sign_webhook_payload(secret, payload)
+    
+    for attempt in range(max_retries):
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                    if resp.status < 500:
+                        return {"status": resp.status, "delivered": True}
+        except Exception as e:
+            if attempt == max_retries - 1:
+                return {"status": 0, "delivered": False, "error": str(e)}
+            await asyncio.sleep(2 ** attempt)
+    
+    return {"status": 0, "delivered": False, "error": "max retries exceeded"}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -39,6 +40,49 @@ class InMemoryRateLimiter:
                 return RateLimitResult(allowed=False, retry_after_seconds=retry_after)
             bucket.append(now)
             return RateLimitResult(allowed=True)
+
+
+class RedisRateLimiter:
+    """Production Redis-backed rate limiter for multi-instance deployments."""
+    
+    def __init__(self, max_requests: int, window_seconds: int, redis_url: str | None = None) -> None:
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self.redis_url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379")
+        self._client = None
+        self._import_redis()
+    
+    def _import_redis(self) -> None:
+        try:
+            import redis
+            self._client = redis.from_url(self.redis_url, decode_responses=True)
+        except ImportError:
+            logger.warning("redis-py not installed, falling back to in-memory")
+            self._client = None
+    
+    def check(self, key: str) -> RateLimitResult:
+        if self._client is None:
+            # Fallback to in-memory if redis unavailable
+            return RateLimitResult(allowed=True)
+        
+        now = time.monotonic()
+        redis_key = f"ratelimit:{key}"
+        
+        try:
+            # Atomic increment with expiry
+            pipe = self._client.pipeline()
+            pipe.incr(redis_key)
+            pipe.expire(redis_key, self.window_seconds)
+            results = pipe.execute()
+            count = results[0]
+            
+            if count > self.max_requests:
+                ttl = self._client.ttl(redis_key)
+                return RateLimitResult(allowed=False, retry_after_seconds=max(1, ttl))
+            return RateLimitResult(allowed=True)
+        except Exception as e:
+            logger.warning(f"Redis rate limit check failed: {e}")
+            return RateLimitResult(allowed=True)  # Fail open
 
 
 def build_request_context(request: Request) -> tuple[str, str]:

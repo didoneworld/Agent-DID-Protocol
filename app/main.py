@@ -13,7 +13,17 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db, init_database
 
-from app.db_models import AgentRecord, AgentIdentityBlueprint
+from app.db_models import (
+    AgentRecord,
+    AgentIdentityBlueprint,
+    BlueprintConsentGrant,
+    BlueprintCredential,
+    BlueprintInheritablePermission,
+    BlueprintOwner,
+    BlueprintPrincipal,
+    BlueprintRequiredResourceAccess,
+    BlueprintSponsor,
+)
 
 from app.migrations import migrate_database
 from app.runtime import InMemoryRateLimiter, build_request_context, log_request, rate_limit_response
@@ -56,6 +66,8 @@ from app.schemas import (
     SamlAssertionRequest,
     SessionAuthResponse,
     ServiceInfoResponse,
+    EffectivePermissionsResponse,
+    PermissionGrant,
 )
 from app.services import AuthorizationError, BootstrapConflictError, ProtocolValidationError, SaaSService
 
@@ -87,18 +99,18 @@ def _record_response(record: AgentRecord) -> AgentRecordResponse:
     )
 
 def _blueprint_response(db: Session, blueprint: AgentIdentityBlueprint) -> AgentIdentityBlueprintResponse:
-    owners = [o.subject for o in db.query(BlueprintOwner).filter_by(organization_id=blueprint.organization_id, blueprint_id=blueprint.blueprint_id).all()]
-    sponsors = [s.subject for s in db.query(BlueprintSponsor).filter_by(organization_id=blueprint.organization_id, blueprint_id=blueprint.blueprint_id).all()]
+    owners = [f"{o.owner_type}:{o.owner_id}" for o in db.query(BlueprintOwner).filter_by(organization_id=blueprint.organization_id, blueprint_id=blueprint.blueprint_id).all()]
+    sponsors = [f"{s.sponsor_type}:{s.sponsor_id}" for s in db.query(BlueprintSponsor).filter_by(organization_id=blueprint.organization_id, blueprint_id=blueprint.blueprint_id).all()]
     required_resource_access = [
         {"resource_app_id": item.resource_app_id, "scopes": item.scopes_json or [], "app_roles": item.app_roles_json or []}
         for item in db.query(BlueprintRequiredResourceAccess).filter_by(organization_id=blueprint.organization_id, blueprint_id=blueprint.blueprint_id).all()
     ]
     inheritable_permissions = [
-        {"resource_app_id": item.resource_app_id, "scopes": item.scopes_json or [], "app_roles": item.app_roles_json or []}
+        {"permission_id": item.permission_id, "display_name": item.display_name, "scope": item.scope, "inheritable": item.inheritable}
         for item in db.query(BlueprintInheritablePermission).filter_by(organization_id=blueprint.organization_id, blueprint_id=blueprint.blueprint_id).all()
     ]
     consent_grants = [
-        {"resource_app_id": item.resource_app_id, "scopes": item.scopes_json or [], "app_roles": item.app_roles_json or [], "revoked": item.revoked}
+        {"resource_app_id": item.principal_id, "scopes": item.scopes_json or [], "app_roles": [], "revoked": item.revoked_at is not None}
         for item in db.query(BlueprintConsentGrant).filter_by(organization_id=blueprint.organization_id, blueprint_id=blueprint.blueprint_id).all()
     ]
     credentials = [
@@ -112,7 +124,7 @@ def _blueprint_response(db: Session, blueprint: AgentIdentityBlueprint) -> Agent
             "last_rotated_at": item.last_rotated_at,
             "development_only": item.development_only,
         }
-        for item in blueprint.credentials
+        for item in db.query(BlueprintCredential).filter_by(organization_id=blueprint.organization_id, blueprint_id=blueprint.blueprint_id).all()
         if item.deleted_at is None
     ]
     return AgentIdentityBlueprintResponse(
@@ -125,14 +137,14 @@ def _blueprint_response(db: Session, blueprint: AgentIdentityBlueprint) -> Agent
         verified_publisher=blueprint.verified_publisher,
         publisher_domain=blueprint.publisher_domain,
         sign_in_audience=blueprint.sign_in_audience,
-        identifier_uris=blueprint.identifier_uris_json or [],
-        app_roles=blueprint.app_roles_json or [],
-        optional_claims=blueprint.optional_claims_json or {},
-        group_membership_claims=blueprint.group_membership_claims_json or [],
+        identifier_uris_json=blueprint.identifier_uris_json or [],
+        app_roles_json=blueprint.app_roles_json or [],
+        optional_claims_json=blueprint.optional_claims_json or {},
+        group_membership_claims_json=blueprint.group_membership_claims_json or [],
         token_encryption_key_id=blueprint.token_encryption_key_id,
-        certification=blueprint.certification_json or {},
-        info_urls=blueprint.info_urls_json or {},
-        tags=blueprint.tags_json or [],
+        certification_json=blueprint.certification_json or {},
+        info_urls_json=blueprint.info_urls_json or {},
+        tags_json=blueprint.tags_json or [],
         status=blueprint.status,
         credentials=credentials,
         permissions={"required_resource_access": required_resource_access, "inheritable_permissions": inheritable_permissions, "consent_grants": consent_grants, "direct_agent_grants": [], "denied_permissions": []},
@@ -194,10 +206,19 @@ def create_app(
     )
     app.state.service = service
     app.state.schema_revision = schema_revision
-    app.state.rate_limiter = InMemoryRateLimiter(
-        max_requests=resolved_rate_limit_requests,
-        window_seconds=resolved_rate_limit_window,
-    )
+    # Use Redis rate limiter in production when REDIS_URL is configured
+    if settings.redis_url and settings.env == "production":
+        from app.runtime import RedisRateLimiter
+        app.state.rate_limiter = RedisRateLimiter(
+            redis_url=settings.redis_url,
+            max_requests=resolved_rate_limit_requests,
+            window_seconds=resolved_rate_limit_window,
+        )
+    else:
+        app.state.rate_limiter = InMemoryRateLimiter(
+            max_requests=resolved_rate_limit_requests,
+            window_seconds=resolved_rate_limit_window,
+        )
     app.state.rate_limit_requests = resolved_rate_limit_requests
     app.state.rate_limit_window_seconds = resolved_rate_limit_window
     static_dir = settings.root_dir / "app" / "static"

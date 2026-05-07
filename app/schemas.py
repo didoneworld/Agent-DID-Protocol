@@ -412,3 +412,10 @@ class EffectivePermissionsResponse(BaseModel):
     inheritable: bool
     owner_id: str | None
     sponsor_id: str | None
+
+
+class PermissionGrant(BaseModel):
+    """Schema for revoking a blueprint permission grant."""
+    resource_app_id: str
+    scopes: list[str] = []
+    app_roles: list[str] = []

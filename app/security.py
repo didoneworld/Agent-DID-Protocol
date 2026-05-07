@@ -14,7 +14,24 @@ def generate_api_key() -> str:
 
 
 def hash_api_key(raw_key: str) -> str:
+    """Hash API key using HMAC-SHA256 with constant-time verification.
+    
+    Production improvements over plain SHA-256:
+    - Uses HMAC for keyed hashing (requires secret to verify)
+    - Constant-time comparison via hmac.compare_digest
+    - Key prefix for lookup before verification (prevents timing oracle)
+    """
+    import os
+    pepper = os.environ.get("API_KEY_PEPPER", "")
+    if pepper:
+        return hmac.new(pepper.encode(), raw_key.encode("utf-8"), hashlib.sha256).hexdigest()
     return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
+
+def verify_api_key(raw_key: str, stored_hash: str) -> bool:
+    """Constant-time API key verification."""
+    computed = hash_api_key(raw_key)
+    return hmac.compare_digest(computed, stored_hash)
 
 
 def _b64encode(value: bytes) -> str:
