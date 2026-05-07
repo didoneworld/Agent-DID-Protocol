@@ -658,7 +658,7 @@ class SaaSService(LifecycleServiceMixin):
         inherited = [self._grant_dict(g.resource_app_id, g.scopes_json, g.app_roles_json) for g in db.scalars(select(BlueprintInheritablePermission).where(BlueprintInheritablePermission.organization_id == organization_id, BlueprintInheritablePermission.blueprint_id == blueprint_id))]
         direct = []
         denied = []
-        for g in db.scalars(select(BlueprintConsentGrant).where(BlueprintConsentGrant.organization_id == organization_id, BlueprintConsentGrant.blueprint_id == blueprint_id, BlueprintConsentGrant.revoked.is_(True))):
+        for g in db.scalars(select(BlueprintConsentGrant).where(BlueprintConsentGrant.organization_id == organization_id, BlueprintConsentGrant.blueprint_id == blueprint_id, BlueprintConsentGrant.revoked_at.is_not(None))):
             denied.append(self._grant_dict(g.resource_app_id, g.scopes_json, g.app_roles_json))
         if agent_record_id:
             for g in db.scalars(select(AgentDirectGrant).where(AgentDirectGrant.organization_id == organization_id, AgentDirectGrant.agent_record_id == agent_record_id)):
