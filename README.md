@@ -456,3 +456,55 @@ Planned work includes:
 ## License
 
 Add license information here before using Agent DID in production or redistributing packaged builds.
+
+---
+## Platform Integration
+
+This repository is a standalone component of the DID One World unified identity platform.
+
+### Platform Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│            DID One World Platform                  │
+├─────────────────────────────────────────────────┤
+│  idwallet     →  Agent-DID  →  verifiable-cred │
+│  (Wallet)       (Identity)     (Credentials)    │
+└─────────────────────────────────────────────┘
+```
+
+### Component Role
+
+| Component | Provides |
+|-----------|----------|
+| **Agent-DID** (this repo) | Agent identity registry, lifecycle management, blueprints, OIDC/SAML |
+| **verifiable-credential** | Credential issuance, verification, revocation |
+| **idwallet** | User wallet, credential storage, presentation |
+
+### Standalone Usage
+
+This repo can be run independently:
+
+```bash
+# Run standalone
+docker build -t agent-did .
+docker run -p 8000:8000 agent-did
+```
+
+### API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /v1/agents` | Create agent |
+| `GET /v1/agents` | List agents |
+| `GET /v1/agents/{id}` | Get agent |
+| `POST /v1/agents/{id}/activate` | Activate agent |
+| `POST /v1/agents/{id}/revoke` | Revoke agent |
+| `GET /health` | Health check |
+
+### Integration Points
+
+When integrated with platform:
+- Credentials from `verifiable-credential` repo
+- Wallet from `idwallet` repo
+- Full platform at [didoneworld/platform](https://github.com/didoneworld/platform)
